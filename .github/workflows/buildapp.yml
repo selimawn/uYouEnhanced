@@ -17,9 +17,9 @@ on:
         required: true
         type: string
       decrypted_youtube_url:
-        description: "Direct URL of the decrypted YouTube IPA"
+        description: "Direct URL of the decrypted YouTube IPA (optional if the YOUTUBE_IPA_URL repo secret is set)"
         default: ""
-        required: true
+        required: false
         type: string
       bundle_id:
         description: "Modify the bundle ID"
@@ -38,12 +38,12 @@ on:
         type: string
       upload_artifact:
         description: "Upload IPA as artifact"
-        default: false
+        default: true
         required: false
         type: boolean
       create_release:
         description: "Create a draft release"
-        default: true
+        default: false
         required: false
         type: boolean
       ytuhd:
@@ -143,16 +143,26 @@ jobs:
           wget --quiet "https://github.com/inoahdev/tbd/releases/download/2.2/tbd-mac" -O /usr/local/bin/tbd
           chmod +x /usr/local/bin/tbd
 
-      - name: Hash YT ipa url
+      - name: Resolve YouTube IPA URL
         run: |
-          URL_YT="$(jq -r '.inputs.decrypted_youtube_url' $GITHUB_EVENT_PATH)"
+          set -euo pipefail
+          if [ -z "${URL_YT:-}" ] || [ "$URL_YT" = "null" ]; then
+            echo "::error::Missing YouTube IPA URL. Add a repository secret named YOUTUBE_IPA_URL (Settings → Secrets and variables → Actions) with a direct download link to a decrypted YouTube IPA, or paste the URL in the workflow input. Google Drive links will fail; use Dropbox (?dl=1), Litterbox, or similar."
+            exit 1
+          fi
           echo ::add-mask::$URL_YT
-          echo URL_YT=$URL_YT >> $GITHUB_ENV
+          echo "URL_YT=$URL_YT" >> "$GITHUB_ENV"
+        env:
+          URL_YT: ${{ github.event.inputs.decrypted_youtube_url || secrets.YOUTUBE_IPA_URL }}
 
       - name: Prepare YouTube iPA
         id: prepare_youtube
         run: |
-          wget "$YOUTUBE_URL" --quiet -O main/YouTube.ipa
+          set -euo pipefail
+          if ! wget "$YOUTUBE_URL" -O main/YouTube.ipa; then
+            echo "::error::Failed to download the YouTube IPA. Use a direct link (Dropbox with dl=1, Litterbox, Archive), not Google Drive."
+            exit 1
+          fi
           cd main
           mv YouTube.ipa YouTube.zip
           unzip -q YouTube.zip
